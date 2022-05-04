@@ -2,7 +2,7 @@
 
 ## Overview
 
-The specification of this contract are as follows:
+**The specification of this contract are as follows:**
 
 -   Allows owner to withdraw ETH from the contract
 -   Deposits can come from any source so long as deposit amount is not 0
@@ -11,7 +11,7 @@ The specification of this contract are as follows:
 -   All withdrawals by owner will refresh the one month timer
 -   The owner may enter a withdrawal amount of 0 to refresh the timer
 
-The contract handles the following fatal error cases:
+**The contract handles the following fatal error cases:**
 
 -   Does not allow contract to be initialised with the zero address (applies to both owner and heir fields)
 -   The owner is not allowed to assign themselves as the heir
