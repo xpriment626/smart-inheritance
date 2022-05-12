@@ -5,22 +5,10 @@
 **The specification of this contract are as follows:**
 
 -   Allows owner to withdraw ETH from the contract
--   Deposits can come from any source so long as deposit amount is not 0
 -   The owner can assign an heir
 -   The heir may inherit the contract if a month goes by without a withdrawal from the owner
 -   All withdrawals by owner will refresh the one month timer
 -   The owner may enter a withdrawal amount of 0 to refresh the timer
-
-**The contract handles the following fatal error cases:**
-
--   Does not allow contract to be initialised with the zero address (applies to both owner and heir fields)
--   The owner is not allowed to assign themselves as the heir
--   Deposits of 0 ETH are reverted
--   Withdrawals by non owners are reverted
--   Does not allow inheritance before expiry
--   Does not allow heir to set themselves or previous owner as new heir
--   Does not allow new heir to be set to the zero address
--   Withdraw and inherit functions are explicitly restricted to owner and heir access respectively
 
 ## Test Reproduction
 

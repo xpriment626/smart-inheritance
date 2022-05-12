@@ -1,149 +1,116 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.10;
+pragma solidity ^0.8.10;
 
 import { VmExtended } from "../../lib/vm-extended/src/VmExtended.sol";
 import { Inherit } from "../Inherit.sol";
 
-error DOSAttempt();
 error UnAuthorised();
-error FatalSetup();
-error InvalidHeir();
+error TooEarly();
+error InsufficientBalance();
 contract ContractTest is VmExtended {
 
     event Log(string);
+    event NumLog(uint256);
 
-    address public annie;
-    address public bob;
-    address public badGuy;
-    address public charlie;
+    address payable public annie;
+    address payable public bob;
+    address payable public badGuy;
+    address payable public charlie;
+    address payable public extra;
     uint256 public constant ONE_MONTH = 2629800;
 
     Inherit instance;
     function setUp() public {
-        (annie, bob, badGuy) = initAccounts(1, 2, 3);
-        charlie = initWithETH(4);
+        (annie, bob, charlie) = initAccounts(1, 2, 3);
+        badGuy = initWithETH(4);
+        extra = initWithETH(5);
         instance = new Inherit(annie, bob);
         emit Log("Accounts and contract instance initialised!");
     }
 
-    function testSetup() public {
-        emit Log("Sanity check for default state variables");
-        Inherit tester = new Inherit(annie, bob);
-        address owner = tester.owner();
-        address heir = tester.heir();
-        uint256 lastWithdrawal = tester.lastWithdrawal();
-        uint256 status = tester.status();
-
-        assertEq(lastWithdrawal, 0);
-        assertEq(status, 1);
-        assertEq(owner, annie);
-        assertEq(heir, bob);
-    }
-
-    function testFatalSetup() public {
-        emit Log("It should NOT allow address(0) for any construcot args");
-        vm_extended.expectRevert(FatalSetup.selector);
-        new Inherit(address(0), address(0));
-    }
-
-    function testMaliciousSetup() public {
-        emit Log("It should NOT allow same heir and owner as constructor args");
-        address user = initWithETH(109);
-        vm_extended.expectRevert(InvalidHeir.selector);
-        new Inherit(user, user);
-    }
-
-    function testWithdrawal() public {
-        emit Log("It should allow withdrawals");
-        vm_extended.startPrank(annie);
-        instance.deposit{value: 10 ether}();
-        instance.withdraw(10 ether);
-        vm_extended.stopPrank();
-        
-        uint256 balance = instance.balance();
-        assertEq(balance, 0);
-    }
-
-    function testUnknownWithdrawal(uint64 amount) public {
-        emit Log("Fuzz test should revert for any amount if caller is not the owner");
-        vm_extended.expectRevert(UnAuthorised.selector);
-        vm_extended.prank(badGuy);
-        instance.withdraw(amount);
-    }
-
-    function testFailBogusWithdrawals() public {
-        emit Log("It should NOT permit withdrawals above current ETH balance");
+    function testOwnerAndHeir() public {
         address owner = instance.owner();
-        vm_extended.prank(owner);
-        instance.withdraw(9999);
+        address heir = instance.heir();
+        address expectedOwner = annie;
+        address expectedHeir = bob;
+
+        assertEq(owner, expectedOwner);
+        assertEq(heir, expectedHeir);
     }
 
-    function testDeposit() public {
-        emit Log("It should allow deposits");
-        address owner = instance.owner();
-        vm_extended.prank(owner);
-        instance.deposit{value: 50 ether}();
-        uint256 balance = instance.balance();
-
-        assertEq(balance, 50 ether);
-    }
-
-    function testDOSAttempt() public {
-        emit Log("It should NOT allow empty transactions");
-        vm_extended.expectRevert(DOSAttempt.selector);
-        vm_extended.prank(badGuy);
-        instance.deposit{value: 0 ether}();
-        vm_extended.warp(block.timestamp + 1);
-        vm_extended.expectRevert(DOSAttempt.selector);
-        vm_extended.prank(badGuy);
-        instance.deposit{value: 0 ether}();
+    function testEarlyInherit() public {
+        vm_extended.prank(bob);
+        vm_extended.expectRevert(TooEarly.selector);
+        instance.inherit(charlie);
     }
 
     function testInherit() public {
-        emit Log("Sanity check for time passage");
-        uint256 jump = 15 days;
-        uint256 start = instance.lastWithdrawal();
-        vm_extended.warp(block.timestamp + jump);
-        assertEq(block.timestamp, start + jump);
 
-        vm_extended.prank(annie);
-        instance.withdraw(0);
-        vm_extended.warp(block.timestamp + ONE_MONTH + 5 minutes);
+        emit Log("First successful inherit");
+
+        uint256 timeIn = instance.lastWithdrawal();
+        vm_extended.warp(timeIn + ONE_MONTH + 5 minutes);
         vm_extended.prank(bob);
         instance.inherit(charlie);
 
-        emit Log("It should update owner and heir values once existing heir inherits");
         address newOwner = instance.owner();
         address newHeir = instance.heir();
 
         assertEq(newOwner, bob);
         assertEq(newHeir, charlie);
-    }
 
-    function testMalicousInherit() public {
-        emit Log("New heir should NOT be address(0)");
-        emit Log("New heir should NOT be current heir");
-        emit Log("New heir should NOT be previous owner");
-        
-        vm_extended.prank(annie);
-        instance.withdraw(0);
-        vm_extended.warp(block.timestamp + ONE_MONTH + 5 minutes);
+        emit Log("Failed early inherit");
 
-        vm_extended.startPrank(bob);
-        vm_extended.expectRevert(InvalidHeir.selector);
-        instance.inherit(annie);
-        vm_extended.expectRevert(InvalidHeir.selector);
-        instance.inherit(bob);
-        vm_extended.expectRevert(InvalidHeir.selector);
-        instance.inherit(address(0));
-        vm_extended.stopPrank();
-    }
+        vm_extended.prank(charlie);
+        vm_extended.expectRevert(TooEarly.selector);
+        instance.inherit(badGuy);
 
-    function testFailEarlyInherit() public {
-        emit Log("It should NOT allow inheritance before expiry");
-        vm_extended.prank(annie);
-        instance.withdraw(0);
+        emit Log("Inherit after owner withdrawal + one month");
+
         vm_extended.prank(bob);
-        instance.inherit(charlie);
+        instance.withdraw(0);
+        uint256 updated = instance.lastWithdrawal();
+        vm_extended.warp(updated + ONE_MONTH + 5 minutes);
+        vm_extended.prank(charlie);
+        instance.inherit(extra);
+
+        address thirdOwner = instance.owner();
+        address thirdHeir = instance.heir();
+
+        assertEq(thirdOwner, charlie);
+        assertEq(thirdHeir, extra);
+    }
+
+    function testDepositAndWithdraw() public {
+        vm_extended.prank(extra);
+        payable(instance).transfer(50 ether);
+
+        uint256 balance = address(instance).balance;
+        uint256 expected = 50 ether;
+
+        assertEq(balance, expected);
+
+        vm_extended.prank(annie);
+        instance.withdraw(50 ether);
+
+        uint256 balanceAfter = address(instance).balance;
+        emit NumLog(balanceAfter);
+        assertEq(balanceAfter, 0);
+    }
+
+    function testUnAuthorisedCalls() public {
+        vm_extended.prank(bob);
+        vm_extended.expectRevert(UnAuthorised.selector);
+        instance.withdraw(0);
+
+        vm_extended.prank(annie);
+        vm_extended.expectRevert(UnAuthorised.selector);
+        instance.inherit(extra);
+    }
+
+    function testBigWithdrawal() public {
+        vm_extended.prank(annie);
+        vm_extended.expectRevert(InsufficientBalance.selector);
+        instance.withdraw(9999);
     }
 }
